@@ -66,9 +66,9 @@ and yearly schedules. Cases it handles:
 Each transaction gets an id built from its contents. Importing the same file twice,
 or two exports with overlapping dates, doesn't create duplicates.
 
-## Testing it without real data
+## Testing
 
-I don't want to use my own bank data, so `moneytrail synth` generates 18 months of
+`moneytrail synth` generates 18 months of
 transactions for a made-up person, with the correct answers stored alongside. It
 writes the same history in all four banks' formats, and `moneytrail eval` compares
 the pipeline's output against the stored answers.
