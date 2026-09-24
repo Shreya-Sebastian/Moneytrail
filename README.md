@@ -4,8 +4,6 @@ moneytrail reads the CSV exports from Dutch banks (ING, Rabobank, ABN AMRO and b
 and tells you who you pay and which payments repeat. It runs on your own machine and
 stores everything in a local DuckDB file.
 
-## Why
-
 Every Dutch bank lets you download your transactions, but the files are hard to use.
 The same shop appears under a dozen different names, each bank uses its own format,
 and nothing tells you which payments are subscriptions. Most budgeting apps solve this
