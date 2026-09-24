@@ -1,4 +1,4 @@
-# moneytrail
+# Moneytrail
 
 moneytrail reads the CSV exports from Dutch banks (ING, Rabobank, ABN AMRO and bunq)
 and tells you who you pay and which payments repeat. It runs on your own machine and
