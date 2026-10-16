@@ -8,6 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from .evaluate import evaluate
+from .evaluate_agent import MODES, evaluate_agent
 from .importers import parse_file
 from .merchants import resolve
 from .recurring import detect
@@ -92,6 +93,24 @@ def cmd_eval(args: argparse.Namespace) -> None:
         print()
 
 
+def cmd_eval_agent(args: argparse.Namespace) -> None:
+    from .llm import Ollama
+    from .world import build_world
+
+    modes = args.modes.split(",")
+    chat = Ollama(args.model, think=args.think) if set(modes) - {"rules"} else None
+    for d in args.dirs:
+        out = Path(args.out) / Path(d).name if args.out else None
+        reports = evaluate_agent(d, build_world(args.set), chat, modes, out, print if args.verbose else None)
+        print(f"== {d}  (world: {args.set}, model: {args.model})")
+        for r in reports.values():
+            s = r.summary()
+            print(f"{s['mode']:<9} hard {s['hard_correct']:>5}  easy {s['easy_correct']:>6}  "
+                  f"fixed {s['fixed']}  broken {s['broken']}  category {s['category_correct']:>6}  "
+                  f"steps {s['mean_steps']:>4}  {s['mean_seconds']:>5}s/case  {s['outcomes']}")
+        print()
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="moneytrail", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -124,6 +143,16 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("dirs", nargs="+")
     s.add_argument("-v", "--verbose", action="store_true")
     s.set_defaults(func=cmd_eval)
+
+    s = sub.add_parser("eval-agent", help="score the merchant investigator against synthetic ground truth")
+    s.add_argument("dirs", nargs="+")
+    s.add_argument("--set", choices=list(CATALOGS), default="dev", help="which simulated world to search")
+    s.add_argument("--model", default="qwen3:8b", help="Ollama model")
+    s.add_argument("--think", action="store_true", help="let the model reason before answering")
+    s.add_argument("--modes", default=",".join(MODES))
+    s.add_argument("--out", help="write per-case traces here")
+    s.add_argument("-v", "--verbose", action="store_true")
+    s.set_defaults(func=cmd_eval_agent)
 
     args = p.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):

@@ -7,3 +7,4 @@ __pycache__/
 data/
 # real bank exports never go in the repo
 exports/
+runs/

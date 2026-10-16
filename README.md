@@ -61,6 +61,64 @@ and yearly schedules. Cases it handles:
 - **Two subscriptions under one name.** iCloud and Apple Music both appear as `APPLE.COM/BILL`.
 - **Yearly renewals.** A single pair of payments a year apart only counts if nothing else from that merchant is in the data. Otherwise two €21.86 supermarket receipts would look like a subscription.
 
+### Merchant investigator
+
+Some shops never show their own name. A cafe run by a holding company shows up as
+`CCV*JV HOLDING B.V.`, and no rule can turn that into "Cafe Jansz". For these I built a
+small agent that runs on a local model (qwen3:8b through Ollama, on a laptop GPU), so no
+transaction data leaves the machine.
+
+It only looks at merchants where a statement name is a legal entity (B.V., V.O.F.,
+holding, horeca and so on). It can call five tools: the merchant's own payment history,
+a search over the rest of the account, a company register search, a register lookup by
+number, and a map search. It ends by giving a name, a category, a confidence and the
+tool results it relied on.
+
+Two rules keep it from making things worse:
+
+- It may answer "unknown", and the prompt says that is better than a wrong name.
+- A name is only accepted if it appears in something a tool returned or in the
+  statements. A name the model made up is rejected and the rules' name stays.
+
+The synthetic shops don't exist, so a real register can't find them. Each persona gets a
+simulated register and map instead: shops that trade under their own name are derived
+from the catalogue, and the hard cases are written by hand with look-alikes, such as the
+same legal name in another city, a holding with several trade names, or a different
+business with a similar name nearby. The held-out world was written without reference to the
+investigator's code or prompt.
+
+I compared three ways of naming the same cases: the rules, the same model shown the same
+history but without tools, and the agent. The prompt was written on the dev set and
+the held-out set was run once.
+
+| held-out, 4 bank formats | rules | model, no tools | agent |
+|---|---|---|---|
+| Hard cases named correctly | 0 of 4 | 0 of 4 | 3 of 4 |
+| Easy cases still correct (of 24) | 21 | 22 to 23 | 23 to 24 |
+| Correct names made wrong | - | 0 | 0 |
+| Category correct (of 28) | - | 23 to 24 | 25 to 26 |
+| Tool calls per case | - | - | 2.5 |
+| Seconds per case | - | about 1 | 5.4 |
+
+On the dev set the agent named both hard cases and kept all 15 easy ones.
+
+What went wrong on the held-out set:
+
+- **One hard case never reached the agent.** A terminal cuts `EL AMRANI HAIR V.O.F.` to
+  `EL AMRANI HAIR V`, so no legal form is left for the filter to see. End to end that
+  makes 3 of the 5 hard shops. I haven't fixed the filter, because I found the problem in
+  the held-out set.
+- **The insurer.** Contents insurance is collected by `ACHMEA SCHADEVERZEKERINGEN N.V.`,
+  which in the register has six trade names, and another Achmea company also uses
+  "Centraal Beheer". The agent kept the legal name. That is wrong, but it is not a made-up name.
+- **Mixed groups.** `Stichting Mollie Payments` contains several web shops, because the
+  rules merged them on the shared IBAN. No name is right for the whole group. This has
+  to be fixed in merchant resolution.
+
+No answers were rejected as made up, and the agent never renamed a merchant the rules
+already had right. Both safeguards are covered by tests with a scripted model in place
+of the real one. These are small numbers: five hard shops in one simulated world.
+
 ### Imports
 
 Each transaction gets an id built from its contents. Importing the same file twice,
@@ -133,7 +191,10 @@ The held-out set is the fairer measure. Going through the failures on it:
   - handle Dutch abbreviations (`vd`, `v.d.`, `van der`).
 
   Then write a new held-out set to measure the result.
-- A tool-using agent for merchants the rules can't name. It will search the rest of your history, OpenStreetMap and company registers, then suggest a name and category along with the evidence it used. I'll measure accuracy, number of steps and cost per case on the examples above.
+- Let the investigator's filter catch legal forms that have been cut off (`V` for
+  V.O.F.), then write a new held-out world to measure it.
+- Connect the investigator to real sources (OpenStreetMap, and a company register) for
+  use on real exports. It only searches the simulated worlds for now.
 - Categories (groceries, transport and so on) labelled by an LLM, then distilled into a small model that runs locally. I want to compare accuracy against cost and speed for both.
 - A read-only MCP server, so an MCP client can answer questions about your spending.
 - A balance forecast for the end of the month.
@@ -151,6 +212,9 @@ moneytrail eval data/demo/ing -v                 # score against the stored answ
 moneytrail import data/demo/ing/statement.csv    # or your own exports; the bank is detected
 moneytrail merchants
 moneytrail recurring
+
+ollama pull qwen3:8b                             # the investigator's local model
+moneytrail eval-agent data/heldout/ing --set heldout -v --out runs/heldout
 
 pytest
 ```
@@ -174,5 +238,9 @@ src/moneytrail/
   store.py       DuckDB storage and deduplication
   synth/         catalogues (dev, heldout), generator, per-bank writers, answers
   evaluate.py    grouping, naming and recurring-series scores
+  investigate.py the merchant investigator: tools, agent loop, safeguards
+  llm.py         client for a local Ollama server
+  world.py       simulated company register and map (hand-written parts in synth/world_*.py)
+  evaluate_agent.py  rules vs model without tools vs agent
   cli.py
 ```
